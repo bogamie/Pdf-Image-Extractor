@@ -149,42 +149,40 @@ class ImageExtractorTUI:
                 num_pages = len(doc)
                 prompt = f"페이지 번호 (1-{num_pages}): "
                 margin_label = " 여백(pt): "
-                margin_display = margin_label + margin_input
-                # 첫 줄 한 줄에 맞춤 (줄바꿈 방지): 여백을 우측 고정, 왼쪽 초과 시 말줄임
-                margin_col = max(w - len(margin_display) - 1, 20)
-                max_left_len = margin_col - 1
-                left_part = prompt + page_input
-                if len(left_part) > max_left_len:
-                    left_display = "\u2026" + left_part[-max_left_len + 1 :]
-                else:
-                    left_display = left_part
+                
                 attr_n = curses.color_pair(1) | curses.A_BOLD
                 attr_focus = curses.color_pair(5) | curses.A_BOLD
+                
                 try:
-                    col = 0
-                    # 왼쪽: 프롬프트 + 페이지 입력(포커스 시 하이라이트)
-                    page_start_in_display = max(0, len(left_display) - len(page_input))
-                    if page_start_in_display > 0:
-                        stdscr.addstr(0, 0, left_display[:page_start_in_display], attr_n)
-                        col = page_start_in_display
-                    if col < margin_col:
-                        seg = left_display[col:margin_col]
-                        stdscr.addstr(0, col, seg, attr_focus if focus_page else attr_n)
-                        col += len(seg)
-                    if col < margin_col:
-                        stdscr.addstr(0, col, " " * (margin_col - col), attr_n)
-                    col = margin_col
-                    label_len = min(len(margin_label), w - col - 1)
-                    if label_len > 0:
-                        stdscr.addstr(0, col, margin_label[:label_len], attr_n)
-                        col += label_len
-                    input_len = min(len(margin_input), w - col - 1)
-                    if input_len > 0:
-                        stdscr.addstr(0, col, margin_input[:input_len], attr_focus if not focus_page else attr_n)
+                    stdscr.move(0, 0)
+                    stdscr.clrtoeol()
+                    
+                    # 1. 페이지 번호 영역 전체 하이라이트 적용
                     if focus_page:
-                        stdscr.move(0, min(len(prompt) + len(page_input), margin_col - 1))
+                        stdscr.addstr(prompt + page_input, attr_focus)
                     else:
-                        stdscr.move(0, min(margin_col + len(margin_label) + len(margin_input), w - 1))
+                        stdscr.addstr(prompt + page_input, attr_n)
+                    
+                    cy, cx = stdscr.getyx()
+                    margin_disp_len = 11 + len(margin_input) 
+                    margin_start_col = max(w - margin_disp_len - 1, cx + 2)
+                    
+                    spaces = margin_start_col - cx
+                    if spaces > 0:
+                        stdscr.addstr(" " * spaces, attr_n)
+                        
+                    # 2. 여백 영역 전체 하이라이트 적용
+                    if not focus_page:
+                        stdscr.addstr(margin_label + margin_input, attr_focus)
+                    else:
+                        stdscr.addstr(margin_label + margin_input, attr_n)
+                        
+                    # 커서 위치 설정
+                    prompt_w = 11 + len(f"(1-{num_pages}): ")
+                    if focus_page:
+                        stdscr.move(0, min(prompt_w + len(page_input), w - 1))
+                    else:
+                        stdscr.move(0, min(margin_start_col + 11 + len(margin_input), w - 1))
                 except curses.error:
                     pass
                 page_str = page_input.strip() or "0"
@@ -244,17 +242,45 @@ class ImageExtractorTUI:
                     if mode == "page_input" and doc is not None:
                         num_pages = len(doc)
                         prompt = f"페이지 번호 (1-{num_pages}): "
-                        margin_label = "여백(pt): "
-                        margin_col = max(w - len(margin_label) - max(8, len(margin_input)) - 1, 20)
-                        max_left = margin_col - 1
-                        left_part = prompt + page_input
-                        left_display = ("\u2026" + left_part[-max_left + 1 :]) if len(left_part) > max_left else left_part
-                        pad = margin_col - len(left_display)
-                        line_visible = (left_display + " " * max(0, pad) + margin_label + margin_input)[: w - 1]
-                        sys.stdout.buffer.write(b"\033[1;1H\033[1;36m")
-                        sys.stdout.buffer.write(line_visible.encode("utf-8"))
-                        sys.stdout.buffer.write(b"\033[0m")
-                        cursor_col = (min(len(prompt) + len(page_input), margin_col - 1) + 1) if focus_page else (margin_col + len(margin_label) + len(margin_input) + 1)
+                        margin_label = " 여백(pt): "
+                        
+                        prompt_w = 11 + len(f"(1-{num_pages}): ")
+                        cx = prompt_w + len(page_input)
+                        margin_disp_len = 11 + len(margin_input)
+                        margin_start_col = max(w - margin_disp_len - 1, cx + 2)
+                        spaces = margin_start_col - cx
+                        
+                        # 줄 초기화
+                        sys.stdout.buffer.write(b"\033[1;1H\033[K")
+                        
+                        # 1. 페이지 번호 영역 전체 출력
+                        if focus_page:
+                            sys.stdout.buffer.write(b"\033[30;46m") # 포커스 하이라이트
+                        else:
+                            sys.stdout.buffer.write(b"\033[1;36m")  # 일반 청록색 텍스트
+                            
+                        sys.stdout.buffer.write(prompt.encode("utf-8"))
+                        sys.stdout.buffer.write(page_input.encode("utf-8"))
+                        sys.stdout.buffer.write(b"\033[0m") # 속성 초기화
+                            
+                        # 중간 공백 처리
+                        if spaces > 0:
+                            sys.stdout.buffer.write(b"\033[1;36m")
+                            sys.stdout.buffer.write((" " * spaces).encode("utf-8"))
+                            sys.stdout.buffer.write(b"\033[0m")
+                            
+                        # 2. 여백 영역 전체 출력
+                        if not focus_page:
+                            sys.stdout.buffer.write(b"\033[30;46m") # 포커스 하이라이트
+                        else:
+                            sys.stdout.buffer.write(b"\033[1;36m")  # 일반 청록색 텍스트
+                            
+                        sys.stdout.buffer.write(margin_label.encode("utf-8"))
+                        sys.stdout.buffer.write(margin_input.encode("utf-8"))
+                        sys.stdout.buffer.write(b"\033[0m") # 속성 초기화
+                        
+                        # 커서 위치 설정
+                        cursor_col = (cx + 1) if focus_page else (margin_start_col + 11 + len(margin_input) + 1)
                         sys.stdout.buffer.write(f"\033[1;{cursor_col}H".encode())
                     sys.stdout.buffer.flush()
                 except (OSError, AttributeError):

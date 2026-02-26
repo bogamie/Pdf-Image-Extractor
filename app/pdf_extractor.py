@@ -186,7 +186,29 @@ class PDFImageExtractor:
         # 2) 벡터 영역
         drawings = page.get_drawings()
         if drawings:
-            rects = [d["rect"] for d in drawings]
+            raw_rects = []
+            for d in drawings:
+                # [추가] 도형에 색칠(fill)이 되어있거나, 테두리 선(color+width)이 있는 경우만 취급
+                has_fill = d.get("fill") is not None
+                has_stroke = d.get("color") is not None and d.get("width", 0) > 0
+                
+                # 둘 다 없으면 화면에 보이지 않는 투명 박스(하이퍼링크 등)이므로 무시
+                if not has_fill and not has_stroke:
+                    continue
+                    
+                raw_rects.append(d["rect"])
+
+            page_h = page.rect.height
+            rects = []
+            for r in raw_rects:
+                # [유지] 상/하단 15% 영역의 노이즈 제거 필터
+                is_header_noise = (r.y1 < page_h * 0.15) and (r.height < 30)
+                is_footer_noise = (r.y0 > page_h * 0.85) and (r.height < 30)
+                
+                if is_header_noise or is_footer_noise:
+                    continue
+                rects.append(r)
+
             merged = self._merge_nearby_rects(rects, gap_pt=self.gap_pt)
             merged = self._filter_small_rects(
                 merged,
